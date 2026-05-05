@@ -94,32 +94,6 @@ func (b *Bot) sendToTarget(from *tgbotapi.User, text string) {
 	}
 }
 
-func (b *Bot) forwardToTarget(msg *tgbotapi.Message) {
-	targetID := b.db.GetTargetGroup()
-	if targetID == 0 {
-		return
-	}
-
-	// Copy the original message first, then attach a profile button in a follow-up
-	fwd := tgbotapi.NewForward(targetID, msg.Chat.ID, msg.MessageID)
-	sent, err := b.api.Send(fwd)
-	if err != nil {
-		log.Printf("Failed to forward to target: %v", err)
-		return
-	}
-
-	// Send profile button as a reply to the forwarded message
-	reply := tgbotapi.NewMessage(targetID, b.profileName(msg.From))
-	reply.ReplyToMessageID = sent.MessageID
-	reply.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL("Profilga o'tish", b.profileURL(msg.From)),
-		),
-	)
-	if _, err := b.api.Send(reply); err != nil {
-		log.Printf("Failed to send profile button: %v", err)
-	}
-}
 
 func (b *Bot) handleMessage(msg *tgbotapi.Message) {
 	// Private chat
@@ -169,8 +143,10 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 		return
 	}
 
-	// Forward to target group before deleting
-	b.forwardToTarget(msg)
+	// Send to target group as "Yangi mijoz" before deleting
+	if msg.Text != "" {
+		b.sendToTarget(msg.From, msg.Text)
+	}
 
 	// Delete message from group
 	del := tgbotapi.NewDeleteMessage(msg.Chat.ID, msg.MessageID)
@@ -178,10 +154,15 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 		log.Printf("Failed to delete message: %v", err)
 	}
 
-	// Notify user via DM (may fail if user hasn't started the bot)
-	dm := tgbotapi.NewMessage(msg.From.ID,
-		"Guruhda buyurtma berish taqiqlangan. Iltimos, bot orqali buyurtma bering: qayerdan, qayerga va telefon raqamingizni yozing.")
-	b.api.Send(dm)
+	// Notify in the group with bot link button
+	notice := tgbotapi.NewMessage(msg.Chat.ID,
+		fmt.Sprintf("%s, guruhda buyurtma berish taqiqlangan. Iltimos, bot orqali buyurtma bering.", b.profileName(msg.From)))
+	notice.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("Buyurtma berish", "https://t.me/"+b.api.Self.UserName),
+		),
+	)
+	b.api.Send(notice)
 }
 
 func (b *Bot) handleCommand(msg *tgbotapi.Message) {
