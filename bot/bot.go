@@ -156,7 +156,7 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 
 	// Notify in the group with bot link button
 	notice := tgbotapi.NewMessage(msg.Chat.ID,
-		fmt.Sprintf("%s, guruhda buyurtma berish taqiqlangan. Iltimos, bot orqali buyurtma bering.", b.profileName(msg.From)))
+		"🚕 Assalomu alaykum, xabaringiz yetkazildi. Taksi chaqirish uchun botimizga tashrif buyuring.")
 	notice.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("Buyurtma berish", "https://t.me/"+b.api.Self.UserName),
