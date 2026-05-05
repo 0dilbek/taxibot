@@ -84,11 +84,13 @@ func (b *Bot) sendToTarget(from *tgbotapi.User, text string) {
 	caption := fmt.Sprintf("Yangi mijoz\n\n%s\n\n%s", text, b.profileName(from))
 
 	msg := tgbotapi.NewMessage(targetID, caption)
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL("Profilga o'tish", b.profileURL(from)),
-		),
-	)
+	if from.UserName != "" {
+		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonURL("Profilga o'tish", "https://t.me/"+from.UserName),
+			),
+		)
+	}
 	if _, err := b.api.Send(msg); err != nil {
 		log.Printf("Failed to send to target group: %v", err)
 	}
@@ -156,7 +158,7 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 
 	// Notify in the group with bot link button
 	notice := tgbotapi.NewMessage(msg.Chat.ID,
-		"🚕 Assalomu alaykum, xabaringiz yetkazildi. Taksi chaqirish uchun botimizga tashrif buyuring.")
+		"🚕 Assalomu alaykum, xabaringiz yetkazildi. Taksi chaqirish uchun botimizga tashrif buyuring.\n\nBuyurtma berish tugmasini bosin hurmatli mijoz\n👇👇👇👇👇👇👇👇👇👇👇")
 	notice.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("Buyurtma berish", "https://t.me/"+b.api.Self.UserName),
