@@ -84,13 +84,11 @@ func (b *Bot) sendToTarget(from *tgbotapi.User, text string) {
 	caption := fmt.Sprintf("Yangi mijoz\n\n%s\n\n%s", text, b.profileName(from))
 
 	msg := tgbotapi.NewMessage(targetID, caption)
-	if from.UserName != "" {
-		msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonURL("Profilga o'tish", "https://t.me/"+from.UserName),
-			),
-		)
-	}
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("Profilga o'tish", b.profileURL(from)),
+		),
+	)
 	if _, err := b.api.Send(msg); err != nil {
 		log.Printf("Failed to send to target group: %v", err)
 	}
