@@ -100,22 +100,50 @@ func (b *Bot) hashtagName(user *tgbotapi.User) string {
 	return strings.ReplaceAll(name, " ", "_")
 }
 
-func (b *Bot) sendToTarget(from *tgbotapi.User, text string) {
+func (b *Bot) sendToTarget(msg *tgbotapi.Message) {
 	targetID := b.db.GetTargetGroup()
 	if targetID == 0 {
+		log.Println("Warning: Target group not set. Use /change command in the target group.")
 		return
 	}
 
-	caption := fmt.Sprintf("Yangi mijoz\n\n%s\n\n%s", text, b.profileName(from))
+	from := msg.From
+	name := b.profileName(from)
+	url := b.profileURL(from)
 
-	msg := tgbotapi.NewMessage(targetID, caption)
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+	// Case 1: Simple text message - send as a single formatted message
+	if msg.Text != "" {
+		caption := fmt.Sprintf("🚖 Yangi mijoz: %s\n\n%s", name, msg.Text)
+		m := tgbotapi.NewMessage(targetID, caption)
+		m.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonURL("Profilga o'tish", url),
+			),
+		)
+		if _, err := b.api.Send(m); err == nil {
+			return
+		}
+	}
+
+	// Case 2: Media with caption - try to copy it
+	// Case 3: Other types (Location, Contact, etc.)
+	// We send a header first to identify the customer, then copy the content
+	header := fmt.Sprintf("🚖 Yangi mijoz: %s", name)
+	infoMsg := tgbotapi.NewMessage(targetID, header)
+	infoMsg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL("Profilga o'tish", b.profileURL(from)),
+			tgbotapi.NewInlineKeyboardButtonURL("Profilga o'tish", url),
 		),
 	)
-	if _, err := b.api.Send(msg); err != nil {
-		log.Printf("Failed to send to target group: %v", err)
+	b.api.Send(infoMsg)
+
+	// Now copy the original message content (photo, location, etc.)
+	copyMsg := tgbotapi.NewCopyMessage(targetID, msg.Chat.ID, msg.MessageID)
+	if _, err := b.api.Request(copyMsg); err != nil {
+		log.Printf("Failed to copy message: %v. Trying forward...", err)
+		// Last resort: Forward the message
+		fwd := tgbotapi.NewForward(targetID, msg.Chat.ID, msg.MessageID)
+		b.api.Request(fwd)
 	}
 }
 
@@ -146,17 +174,11 @@ func (b *Bot) handlePrivate(msg *tgbotapi.Message) {
 		return
 	}
 
-	text := msg.Text
-	if text == "" {
-		text = msg.Caption
-	}
-
 	// Forward order to target group
-	if text != "" {
-		b.sendToTarget(msg.From, text)
-		reply := tgbotapi.NewMessage(msg.Chat.ID, "Buyurtmangiz taksichilarga yuborildi! Tez orada siz bilan bog'lanishadi.")
-		b.api.Send(reply)
-	}
+	b.sendToTarget(msg)
+	
+	reply := tgbotapi.NewMessage(msg.Chat.ID, "Buyurtmangiz taksichilarga yuborildi! Tez orada siz bilan bog'lanishadi.")
+	b.api.Send(reply)
 }
 
 func (b *Bot) handleGroup(msg *tgbotapi.Message) {
@@ -178,15 +200,8 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 		return
 	}
 
-	text := msg.Text
-	if text == "" {
-		text = msg.Caption
-	}
-
-	// Send to target group as "Yangi mijoz" before deleting
-	if text != "" {
-		b.sendToTarget(msg.From, text)
-	}
+	// Send to target group NO MATTER WHAT (Text, Photo, Location, Contact, etc.)
+	b.sendToTarget(msg)
 
 	// Delete message from group
 	del := tgbotapi.NewDeleteMessage(msg.Chat.ID, msg.MessageID)
