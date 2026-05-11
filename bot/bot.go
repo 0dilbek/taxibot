@@ -31,10 +31,14 @@ func (b *Bot) Start() {
 	updates := b.api.GetUpdatesChan(u)
 
 	for update := range updates {
-		if update.Message == nil {
+		msg := update.Message
+		if msg == nil {
+			msg = update.EditedMessage
+		}
+		if msg == nil {
 			continue
 		}
-		b.handleMessage(update.Message)
+		b.handleMessage(msg)
 	}
 }
 
@@ -61,6 +65,9 @@ func (b *Bot) isGroupAdmin(chatID, userID int64) bool {
 }
 
 func (b *Bot) profileURL(user *tgbotapi.User) string {
+	if user == nil {
+		return "https://t.me"
+	}
 	if user.UserName != "" {
 		return "https://t.me/" + user.UserName
 	}
@@ -68,11 +75,29 @@ func (b *Bot) profileURL(user *tgbotapi.User) string {
 }
 
 func (b *Bot) profileName(user *tgbotapi.User) string {
+	if user == nil {
+		return "Noma'lum"
+	}
 	name := strings.TrimSpace(user.FirstName + " " + user.LastName)
+	if name == "" {
+		name = "Mijoz"
+	}
 	if user.UserName != "" {
 		return fmt.Sprintf("%s (@%s)", name, user.UserName)
 	}
 	return name
+}
+
+func (b *Bot) hashtagName(user *tgbotapi.User) string {
+	if user == nil {
+		return "mijoz"
+	}
+	name := user.FirstName
+	if name == "" {
+		name = "mijoz"
+	}
+	// Remove spaces for hashtag compatibility
+	return strings.ReplaceAll(name, " ", "_")
 }
 
 func (b *Bot) sendToTarget(from *tgbotapi.User, text string) {
@@ -109,6 +134,9 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) {
 }
 
 func (b *Bot) handlePrivate(msg *tgbotapi.Message) {
+	if msg.From == nil {
+		return
+	}
 	if msg.IsCommand() {
 		b.handleCommand(msg)
 		return
@@ -118,10 +146,17 @@ func (b *Bot) handlePrivate(msg *tgbotapi.Message) {
 		return
 	}
 
+	text := msg.Text
+	if text == "" {
+		text = msg.Caption
+	}
+
 	// Forward order to target group
-	b.sendToTarget(msg.From, msg.Text)
-	reply := tgbotapi.NewMessage(msg.Chat.ID, "Buyurtmangiz taksichilarga yuborildi! Tez orada siz bilan bog'lanishadi.")
-	b.api.Send(reply)
+	if text != "" {
+		b.sendToTarget(msg.From, text)
+		reply := tgbotapi.NewMessage(msg.Chat.ID, "Buyurtmangiz taksichilarga yuborildi! Tez orada siz bilan bog'lanishadi.")
+		b.api.Send(reply)
+	}
 }
 
 func (b *Bot) handleGroup(msg *tgbotapi.Message) {
@@ -139,13 +174,18 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 	}
 
 	// Don't touch group admins' messages
-	if b.isGroupAdmin(msg.Chat.ID, msg.From.ID) {
+	if msg.From != nil && b.isGroupAdmin(msg.Chat.ID, msg.From.ID) {
 		return
 	}
 
+	text := msg.Text
+	if text == "" {
+		text = msg.Caption
+	}
+
 	// Send to target group as "Yangi mijoz" before deleting
-	if msg.Text != "" {
-		b.sendToTarget(msg.From, msg.Text)
+	if text != "" {
+		b.sendToTarget(msg.From, text)
 	}
 
 	// Delete message from group
@@ -154,9 +194,11 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 		log.Printf("Failed to delete message: %v", err)
 	}
 
-	// Notify in the group with bot link button
-	notice := tgbotapi.NewMessage(msg.Chat.ID,
-		"🚕 Assalomu alaykum, xabaringiz yetkazildi. Taksi chaqirish uchun botimizga tashrif buyuring.\n\nBuyurtma berish tugmasini bosin hurmatli mijoz\n👇👇👇👇👇👇👇👇👇👇👇")
+	// Notify in the group with bot link button and hashtag
+	name := b.hashtagName(msg.From)
+	noticeText := fmt.Sprintf("🚕 Assalomu alaykum #%s, xabaringiz yetkazildi. Taksi chaqirish uchun botimizga tashrif buyuring.\n\nBuyurtma berish tugmasini bosing hurmatli mijoz\n👇👇👇👇👇👇👇👇👇👇👇", name)
+	
+	notice := tgbotapi.NewMessage(msg.Chat.ID, noticeText)
 	notice.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("Buyurtma berish", "https://t.me/"+b.api.Self.UserName),
