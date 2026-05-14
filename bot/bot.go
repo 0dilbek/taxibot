@@ -3,7 +3,6 @@ package bot
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"strings"
 	"time"
 
@@ -55,7 +54,7 @@ func (b *Bot) Start() {
 	}
 }
 
-// sendAd sends the advertisement photo to all monitored groups.
+// sendAd sends the ad to all monitored groups, deleting today's previous message first.
 func (b *Bot) sendAd() {
 	groups, err := b.db.ListGroups()
 	if err != nil || len(groups) == 0 {
@@ -69,34 +68,33 @@ func (b *Bot) sendAd() {
 		),
 	)
 
+	today := time.Now().Format("2006-01-02")
+
 	for _, g := range groups {
+		// Delete previous message only if it was sent today
+		if g.LastMsgID != 0 && g.LastSentAt.Format("2006-01-02") == today {
+			b.api.Request(tgbotapi.NewDeleteMessage(g.ChatID, g.LastMsgID))
+		}
+
 		photo := tgbotapi.NewPhoto(g.ChatID, tgbotapi.FileURL(adImageURL))
 		photo.Caption = adText
 		photo.ReplyMarkup = markup
-		if _, err := b.api.Send(photo); err != nil {
+		sent, err := b.api.Send(photo)
+		if err != nil {
 			log.Printf("Failed to send ad to group %d (%s): %v", g.ChatID, g.Title, err)
+			continue
 		}
+		b.db.UpdateLastMsg(g.ChatID, sent.MessageID, time.Now())
 	}
 }
 
-// runScheduler sends the ad once a day at a random time between 07:00 and 20:00.
+// runScheduler sends the ad every 10 minutes.
 func (b *Bot) runScheduler() {
-	for {
-		next := nextRandomTime()
-		log.Printf("Next ad scheduled at: %s", next.Format("2006-01-02 15:04:05"))
-		time.Sleep(time.Until(next))
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
 		b.sendAd()
 	}
-}
-
-// nextRandomTime returns a random time between 07:00 and 20:00 the next day.
-func nextRandomTime() time.Time {
-	now := time.Now()
-	tomorrow := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
-	minSec := 7 * 3600
-	maxSec := 20 * 3600
-	randomSec := minSec + rand.Intn(maxSec-minSec)
-	return tomorrow.Add(time.Duration(randomSec) * time.Second)
 }
 
 func (b *Bot) isAdmin(userID int64) bool {
