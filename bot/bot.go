@@ -166,6 +166,7 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 	}
 }
 
+
 func (b *Bot) reply(msg *tgbotapi.Message, text string) {
 	b.api.Send(tgbotapi.NewMessage(msg.Chat.ID, text))
 }

@@ -15,6 +15,7 @@ type Config struct {
 	DBPath   string
 }
 
+
 func Load() *Config {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file, using environment variables")
