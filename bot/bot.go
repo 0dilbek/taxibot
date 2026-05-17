@@ -121,8 +121,9 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 
 	b.api.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, msg.MessageID))
 
+	firstName := strings.ReplaceAll(msg.From.FirstName, " ", "_")
 	notice := tgbotapi.NewMessage(msg.Chat.ID,
-		"🚕 Assalomu alaykum, xabaringiz yetkazildi. Taksi chaqirish uchun botimizga tashrif buyuring.\n\nBuyurtma berish tugmasini bosin hurmatli mijoz\n👇👇👇👇👇👇👇👇👇👇👇")
+		fmt.Sprintf("🚕 Assalomu alaykum #%s, xabaringiz yetkazildi. Taksi chaqirish uchun botimizga tashrif buyuring.\n\nBuyurtma berish tugmasini bosin hurmatli mijoz\n👇👇👇👇👇👇👇👇👇👇👇", firstName))
 	notice.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("Buyurtma berish", "https://t.me/"+b.api.Self.UserName),
