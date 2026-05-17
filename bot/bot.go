@@ -46,10 +46,13 @@ func (b *Bot) Start() {
 		if update.Message == nil {
 			continue
 		}
-		if update.Message.IsCommand() {
-			b.handleCommand(update.Message)
-		} else if update.Message.Chat.IsPrivate() {
-			b.handlePrivate(update.Message)
+		msg := update.Message
+		if msg.IsCommand() {
+			b.handleCommand(msg)
+		} else if msg.Chat.IsPrivate() {
+			b.handlePrivate(msg)
+		} else if msg.Chat.IsGroup() || msg.Chat.IsSuperGroup() {
+			b.handleGroup(msg)
 		}
 	}
 }
@@ -106,6 +109,19 @@ func (b *Bot) isAdmin(userID int64) bool {
 	return false
 }
 
+func (b *Bot) isGroupAdmin(chatID, userID int64) bool {
+	member, err := b.api.GetChatMember(tgbotapi.GetChatMemberConfig{
+		ChatConfigWithUser: tgbotapi.ChatConfigWithUser{
+			ChatID: chatID,
+			UserID: userID,
+		},
+	})
+	if err != nil {
+		return false
+	}
+	return member.IsAdministrator() || member.IsCreator()
+}
+
 func (b *Bot) profileURL(user *tgbotapi.User) string {
 	if user.UserName != "" {
 		return "https://t.me/" + user.UserName
@@ -145,6 +161,28 @@ func (b *Bot) handlePrivate(msg *tgbotapi.Message) {
 	b.sendToTarget(msg.From, msg.Text)
 	reply := tgbotapi.NewMessage(msg.Chat.ID, "Buyurtmangiz taksichilarga yuborildi! Tez orada siz bilan bog'lanishadi.")
 	b.api.Send(reply)
+}
+
+func (b *Bot) handleGroup(msg *tgbotapi.Message) {
+	if !b.db.IsBotEnabled() || !b.db.IsMonitored(msg.Chat.ID) {
+		return
+	}
+	if msg.From == nil || b.isGroupAdmin(msg.Chat.ID, msg.From.ID) {
+		return
+	}
+
+	b.sendToTarget(msg.From, msg.Text)
+
+	b.api.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, msg.MessageID))
+
+	notice := tgbotapi.NewMessage(msg.Chat.ID,
+		"🚕 Assalomu alaykum, xabaringiz yetkazildi. Taksi chaqirish uchun botimizga tashrif buyuring.\n\nBuyurtma berish tugmasini bosin hurmatli mijoz\n👇👇👇👇👇👇👇👇👇👇👇")
+	notice.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonURL("Buyurtma berish", "https://t.me/"+b.api.Self.UserName),
+		),
+	)
+	b.api.Send(notice)
 }
 
 func (b *Bot) handleCommand(msg *tgbotapi.Message) {
