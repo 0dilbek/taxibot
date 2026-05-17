@@ -4,16 +4,10 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"taxibot/config"
 	"taxibot/database"
-)
-
-const (
-	adImageURL = "https://cdn.upl.uz/posts/2025-06/7881302819_photo_2025-06-17_21-49-27.jpg"
-	adText     = "✅ RASMIY BOTIMIZ ORQALI ISHONCHI TEZKOR TAXI BUYURTMA BERISHINGIZ MUMKIN BUNING UCHUN PASTDAGI TAXI BUYURTMA BERISH TUGMASINI BOSIB OSON TAXI ZAKAZ QILING 🚕"
 )
 
 type Bot struct {
@@ -32,12 +26,6 @@ func New(cfg *config.Config, db *database.DB) *Bot {
 }
 
 func (b *Bot) Start() {
-	// On restart — send ad immediately
-	b.sendAd()
-
-	// Daily scheduler
-	go b.runScheduler()
-
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates := b.api.GetUpdatesChan(u)
@@ -54,49 +42,6 @@ func (b *Bot) Start() {
 		} else if msg.Chat.IsGroup() || msg.Chat.IsSuperGroup() {
 			b.handleGroup(msg)
 		}
-	}
-}
-
-// sendAd sends the ad to all monitored groups, deleting today's previous message first.
-func (b *Bot) sendAd() {
-	groups, err := b.db.ListGroups()
-	if err != nil || len(groups) == 0 {
-		log.Println("No monitored groups to send ad")
-		return
-	}
-
-	markup := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL("Buyurtma berish", "https://t.me/"+b.api.Self.UserName),
-		),
-	)
-
-	today := time.Now().Format("2006-01-02")
-
-	for _, g := range groups {
-		// Delete previous message only if it was sent today
-		if g.LastMsgID != 0 && g.LastSentAt.Format("2006-01-02") == today {
-			b.api.Request(tgbotapi.NewDeleteMessage(g.ChatID, g.LastMsgID))
-		}
-
-		photo := tgbotapi.NewPhoto(g.ChatID, tgbotapi.FileURL(adImageURL))
-		photo.Caption = adText
-		photo.ReplyMarkup = markup
-		sent, err := b.api.Send(photo)
-		if err != nil {
-			log.Printf("Failed to send ad to group %d (%s): %v", g.ChatID, g.Title, err)
-			continue
-		}
-		b.db.UpdateLastMsg(g.ChatID, sent.MessageID, time.Now())
-	}
-}
-
-// runScheduler sends the ad every 10 minutes.
-func (b *Bot) runScheduler() {
-	ticker := time.NewTicker(10 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		b.sendAd()
 	}
 }
 
@@ -159,8 +104,7 @@ func (b *Bot) handlePrivate(msg *tgbotapi.Message) {
 		return
 	}
 	b.sendToTarget(msg.From, msg.Text)
-	reply := tgbotapi.NewMessage(msg.Chat.ID, "Buyurtmangiz taksichilarga yuborildi! Tez orada siz bilan bog'lanishadi.")
-	b.api.Send(reply)
+	b.api.Send(tgbotapi.NewMessage(msg.Chat.ID, "Buyurtmangiz taksichilarga yuborildi! Tez orada siz bilan bog'lanishadi."))
 }
 
 func (b *Bot) handleGroup(msg *tgbotapi.Message) {
@@ -171,7 +115,9 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 		return
 	}
 
-	b.sendToTarget(msg.From, msg.Text)
+	if msg.Text != "" {
+		b.sendToTarget(msg.From, msg.Text)
+	}
 
 	b.api.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, msg.MessageID))
 
@@ -199,11 +145,8 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.cmdOn(msg)
 	case "off":
 		b.cmdOff(msg)
-	case "sendnow":
-		b.cmdSendNow(msg)
 	}
 }
-
 
 func (b *Bot) reply(msg *tgbotapi.Message, text string) {
 	b.api.Send(tgbotapi.NewMessage(msg.Chat.ID, text))
@@ -273,13 +216,4 @@ func (b *Bot) cmdOff(msg *tgbotapi.Message) {
 	}
 	b.db.SetBotEnabled(false)
 	b.reply(msg, "⛔ Bot o'chirildi.")
-}
-
-// cmdSendNow forces sending the ad immediately (admin only).
-func (b *Bot) cmdSendNow(msg *tgbotapi.Message) {
-	if !b.isAdmin(msg.From.ID) {
-		return
-	}
-	b.sendAd()
-	b.reply(msg, "✅ Reklama xabari yuborildi.")
 }
