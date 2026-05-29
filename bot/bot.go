@@ -82,10 +82,10 @@ func (b *Bot) profileName(user *tgbotapi.User) string {
 	return name
 }
 
-func (b *Bot) sendToTarget(from *tgbotapi.User, text string) {
+func (b *Bot) sendToTarget(from *tgbotapi.User, text string) error {
 	targetID := b.db.GetTargetGroup()
 	if targetID == 0 {
-		return
+		return fmt.Errorf("target group not set")
 	}
 	caption := fmt.Sprintf("Yangi mijoz\n\n%s\n\n%s", text, b.profileName(from))
 	msg := tgbotapi.NewMessage(targetID, caption)
@@ -96,14 +96,19 @@ func (b *Bot) sendToTarget(from *tgbotapi.User, text string) {
 	)
 	if _, err := b.api.Send(msg); err != nil {
 		log.Printf("Failed to send to target group: %v", err)
+		return err
 	}
+	return nil
 }
 
 func (b *Bot) handlePrivate(msg *tgbotapi.Message) {
 	if !b.db.IsBotEnabled() {
 		return
 	}
-	b.sendToTarget(msg.From, msg.Text)
+	if err := b.sendToTarget(msg.From, msg.Text); err != nil {
+		b.api.Send(tgbotapi.NewMessage(msg.Chat.ID, "Xatolik yuz berdi. Qaytadan urinib ko'ring."))
+		return
+	}
 	b.api.Send(tgbotapi.NewMessage(msg.Chat.ID, "Buyurtmangiz taksichilarga yuborildi! Tez orada siz bilan bog'lanishadi."))
 }
 
@@ -111,25 +116,32 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 	if !b.db.IsBotEnabled() || !b.db.IsMonitored(msg.Chat.ID) {
 		return
 	}
-	if msg.From == nil || b.isGroupAdmin(msg.Chat.ID, msg.From.ID) {
+	// Skip anonymous admins (sent on behalf of a chat) and bots
+	if msg.SenderChat != nil {
+		return
+	}
+	if msg.From == nil || msg.From.IsBot {
+		return
+	}
+	if b.isGroupAdmin(msg.Chat.ID, msg.From.ID) {
 		return
 	}
 
+	// Only delete if message was successfully sent to target group
 	if msg.Text != "" {
-		b.sendToTarget(msg.From, msg.Text)
+		if err := b.sendToTarget(msg.From, msg.Text); err != nil {
+			return
+		}
 	}
 
 	b.api.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, msg.MessageID))
 
 	firstName := strings.ReplaceAll(msg.From.FirstName, " ", "_")
-	notice := tgbotapi.NewMessage(msg.Chat.ID,
-		fmt.Sprintf("🚕 Assalomu alaykum #%s, xabaringiz yetkazildi. Taksi chaqirish uchun botimizga tashrif buyuring.\n\nBuyurtma berish tugmasini bosin hurmatli mijoz\n👇👇👇👇👇👇👇👇👇👇👇", firstName))
-	notice.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonURL("Buyurtma berish", "https://t.me/"+b.api.Self.UserName),
-		),
+	noticeText := fmt.Sprintf(
+		"🌟 ASSALOMU ALAYKUM XURMATLI #%s\nZAKASINGIZ QABUL QILINDI📨\nSHAFYORLAR SIZGA ALOQAGA CHIQISHADI ☎️\nBIZNI TANLAGANINGIZ UCHUN RAXMAT💥",
+		firstName,
 	)
-	b.api.Send(notice)
+	b.api.Send(tgbotapi.NewMessage(msg.Chat.ID, noticeText))
 }
 
 func (b *Bot) handleCommand(msg *tgbotapi.Message) {
