@@ -88,13 +88,21 @@ func (b *Bot) sendToTarget(from *tgbotapi.User, text string) error {
 		return fmt.Errorf("target group not set")
 	}
 	caption := fmt.Sprintf("Yangi mijoz\n\n%s\n\n%s", text, b.profileName(from))
+
+	// Try with profile button first
 	msg := tgbotapi.NewMessage(targetID, caption)
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonURL("Profilga o'tish", b.profileURL(from)),
 		),
 	)
-	if _, err := b.api.Send(msg); err != nil {
+	if _, err := b.api.Send(msg); err == nil {
+		return nil
+	}
+
+	// Fallback: send plain text without button
+	plain := tgbotapi.NewMessage(targetID, caption)
+	if _, err := b.api.Send(plain); err != nil {
 		log.Printf("Failed to send to target group: %v", err)
 		return err
 	}
@@ -127,11 +135,8 @@ func (b *Bot) handleGroup(msg *tgbotapi.Message) {
 		return
 	}
 
-	// Only delete if message was successfully sent to target group
 	if msg.Text != "" {
-		if err := b.sendToTarget(msg.From, msg.Text); err != nil {
-			return
-		}
+		b.sendToTarget(msg.From, msg.Text)
 	}
 
 	b.api.Request(tgbotapi.NewDeleteMessage(msg.Chat.ID, msg.MessageID))
