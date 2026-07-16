@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -163,6 +164,8 @@ func (b *Bot) handleCommand(msg *tgbotapi.Message) {
 		b.cmdOn(msg)
 	case "off":
 		b.cmdOff(msg)
+	case "new":
+		b.cmdNew(msg)
 	}
 }
 
@@ -234,4 +237,101 @@ func (b *Bot) cmdOff(msg *tgbotapi.Message) {
 	}
 	b.db.SetBotEnabled(false)
 	b.reply(msg, "⛔ Bot o'chirildi.")
+}
+
+const newOrderUsage = "Foydalanish:\n" +
+	"/new\n" +
+	"ID: <mijozning Telegram ID raqami>\n" +
+	"Ism: <ism familiya>\n" +
+	"Username: <username, ixtiyoriy>\n" +
+	"Matn: <buyurtma matni: manzil, telefon va h.k.>"
+
+// cmdNew lets an admin (or an automated user-bot listed in ADMIN_IDS) submit
+// order data collected elsewhere, using the same "Yangi mijoz" template and
+// profile-button logic as organic group/private messages.
+func (b *Bot) cmdNew(msg *tgbotapi.Message) {
+	if !b.isAdmin(msg.From.ID) {
+		return
+	}
+	args := strings.TrimSpace(msg.CommandArguments())
+	if args == "" {
+		b.reply(msg, newOrderUsage)
+		return
+	}
+	customer, text, err := parseNewOrderArgs(args)
+	if err != nil {
+		b.reply(msg, fmt.Sprintf("Xatolik: %s\n\n%s", err.Error(), newOrderUsage))
+		return
+	}
+	if err := b.sendToTarget(customer, text); err != nil {
+		b.reply(msg, "Xatolik yuz berdi: maxsus guruhga yuborib bo'lmadi.")
+		return
+	}
+	b.reply(msg, "✅ Buyurtma maxsus guruhga yuborildi.")
+}
+
+// parseNewOrderArgs parses the labeled-line format expected by /new:
+//
+//	ID: 123456789
+//	Ism: Aziz Karimov
+//	Username: azizkarimov
+//	Matn: Chilonzordan Yunusobodga, tel: +998901234567
+//
+// "Matn:" marks the start of the free-text order body and may span
+// multiple lines; it must be the last field.
+func parseNewOrderArgs(args string) (*tgbotapi.User, string, error) {
+	var id int64
+	var ism, username string
+	var matnLines []string
+	inMatn := false
+
+	for _, line := range strings.Split(args, "\n") {
+		if inMatn {
+			matnLines = append(matnLines, line)
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "ID:"):
+			v := strings.TrimSpace(strings.TrimPrefix(trimmed, "ID:"))
+			parsed, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return nil, "", fmt.Errorf("ID noto'g'ri: %q", v)
+			}
+			id = parsed
+		case strings.HasPrefix(trimmed, "Ism:"):
+			ism = strings.TrimSpace(strings.TrimPrefix(trimmed, "Ism:"))
+		case strings.HasPrefix(trimmed, "Username:"):
+			username = strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(trimmed, "Username:")), "@")
+		case strings.HasPrefix(trimmed, "Matn:"):
+			inMatn = true
+			if first := strings.TrimSpace(strings.TrimPrefix(trimmed, "Matn:")); first != "" {
+				matnLines = append(matnLines, first)
+			}
+		}
+	}
+
+	if id == 0 {
+		return nil, "", fmt.Errorf("ID ko'rsatilmagan")
+	}
+	if ism == "" {
+		return nil, "", fmt.Errorf("Ism ko'rsatilmagan")
+	}
+	text := strings.TrimSpace(strings.Join(matnLines, "\n"))
+	if text == "" {
+		return nil, "", fmt.Errorf("Matn ko'rsatilmagan")
+	}
+
+	firstName, lastName := ism, ""
+	if parts := strings.SplitN(ism, " ", 2); len(parts) == 2 {
+		firstName, lastName = parts[0], parts[1]
+	}
+
+	customer := &tgbotapi.User{
+		ID:        id,
+		FirstName: firstName,
+		LastName:  lastName,
+		UserName:  username,
+	}
+	return customer, text, nil
 }
